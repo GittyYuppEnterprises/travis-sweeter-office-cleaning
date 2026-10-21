@@ -18,7 +18,7 @@ jobs:
       - name: Test live responsiveness, QR tracking, and browser form flow
         shell: bash
         run: |
-          cat > /tmp/qa.js <<'NODE'
+          cat > qa.js <<'NODE'
           const { chromium } = require('playwright');
 
           (async () => {
@@ -46,11 +46,23 @@ jobs:
               if (metrics.submitHeight < 44) throw new Error('Submit tap target under 44px at '+width);
             }
 
+            if (errors.length) {
+              console.log('site-browser-errors', JSON.stringify(errors));
+              throw new Error('Browser console/page errors detected on site');
+            }
+
             await page.setViewportSize({width:390,height:844});
             await page.goto(base+'?src=card', {waitUntil:'networkidle', timeout:30000});
             const source = await page.locator('#lead-source').inputValue();
             console.log('lead-source', source);
             if (source !== 'Business card QR') throw new Error('QR source tracking failed');
+
+            let postStatus = null;
+            page.on('response', response => {
+              if (response.request().method() === 'POST' && response.url().startsWith('https://formsubmit.co/')) {
+                postStatus = response.status();
+              }
+            });
 
             await page.locator('input[name="Name"]').fill('AUTOMATED SITE TEST');
             await page.locator('input[name="Business"]').fill('AUTOMATED WEBSITE TEST - IGNORE');
@@ -64,17 +76,15 @@ jobs:
               page.locator('button[type="submit"]').click()
             ]);
             await page.waitForTimeout(3000);
+            console.log('form-post-status', postStatus);
             console.log('form-final-url', page.url());
             console.log('form-page-title', await page.title());
             console.log('form-body-snippet', (await page.locator('body').innerText()).slice(0,800).replace(/\s+/g,' '));
-
-            if (errors.length) {
-              console.log('browser-console-errors', JSON.stringify(errors));
-              throw new Error('Browser console/page errors detected');
-            }
+            if (postStatus === null) throw new Error('No browser POST to FormSubmit observed');
+            if (postStatus >= 500) throw new Error('FormSubmit server error: '+postStatus);
 
             await browser.close();
             console.log('LIVE BROWSER QA PASSED');
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
-          node /tmp/qa.js
+          node qa.js
