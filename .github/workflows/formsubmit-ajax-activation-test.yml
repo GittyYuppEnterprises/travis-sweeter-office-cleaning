@@ -1,0 +1,25 @@
+name: FormSubmit AJAX Activation Test
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  ajax-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test official FormSubmit AJAX endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://formsubmit.co/ajax/travissweeter@gmail.com"
+          code=$(curl -sS -o /tmp/response.json -w "%{http_code}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -X POST "$ENDPOINT" \
+            --data '{"name":"AUTOMATED SITE ACTIVATION TEST","business":"AUTOMATED WEBSITE TEST - IGNORE","phone":"320.420.2324","message":"One-time AJAX activation test. No follow-up needed.","Lead Source":"Automated integration test","_subject":"TEST - commercial cleaning website activation"}')
+          echo "HTTP: $code"
+          echo "Response:"
+          cat /tmp/response.json
+          echo
+          test "$code" -ge 200 -a "$code" -lt 500
