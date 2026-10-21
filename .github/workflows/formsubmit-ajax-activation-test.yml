@@ -1,8 +1,7 @@
 name: FormSubmit AJAX Activation Test
 
 on:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   ajax-test:
