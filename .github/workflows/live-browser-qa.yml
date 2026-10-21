@@ -1,0 +1,80 @@
+name: Live Browser QA
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  browser-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright >/dev/null 2>&1
+          npx playwright install chromium --with-deps >/dev/null 2>&1
+
+      - name: Test live responsiveness, QR tracking, and browser form flow
+        shell: bash
+        run: |
+          cat > /tmp/qa.js <<'NODE'
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const base = 'https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/';
+            const browser = await chromium.launch({headless:true});
+            const page = await browser.newPage();
+            const errors = [];
+            page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+            page.on('pageerror', err => errors.push(err.message));
+
+            for (const width of [320, 375, 390, 768, 1024, 1440]) {
+              await page.setViewportSize({width, height:900});
+              await page.goto(base, {waitUntil:'networkidle', timeout:30000});
+              const metrics = await page.evaluate(() => ({
+                innerWidth: window.innerWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                h1: document.querySelector('h1')?.innerText || '',
+                quoteExists: !!document.querySelector('#quote'),
+                submitHeight: document.querySelector('button[type="submit"]')?.getBoundingClientRect().height || 0
+              }));
+              console.log('viewport', width, JSON.stringify(metrics));
+              if (metrics.scrollWidth > metrics.innerWidth + 1) throw new Error('Horizontal overflow at '+width);
+              if (!metrics.h1.includes('Commercial office cleaning in St. Cloud.')) throw new Error('H1 missing at '+width);
+              if (!metrics.quoteExists) throw new Error('Quote form missing at '+width);
+              if (metrics.submitHeight < 44) throw new Error('Submit tap target under 44px at '+width);
+            }
+
+            await page.setViewportSize({width:390,height:844});
+            await page.goto(base+'?src=card', {waitUntil:'networkidle', timeout:30000});
+            const source = await page.locator('#lead-source').inputValue();
+            console.log('lead-source', source);
+            if (source !== 'Business card QR') throw new Error('QR source tracking failed');
+
+            await page.locator('input[name="Name"]').fill('AUTOMATED SITE TEST');
+            await page.locator('input[name="Business"]').fill('AUTOMATED WEBSITE TEST - IGNORE');
+            await page.locator('input[name="Phone"]').fill('320.420.2324');
+            await page.locator('select[name="Frequency"]').selectOption({label:'Not sure yet'});
+            await page.locator('select[name="Office Size"]').selectOption({label:'800–2,000 sq ft'});
+            await page.locator('textarea[name="Details"]').fill('Automated browser integration test. No follow-up needed.');
+
+            await Promise.all([
+              page.waitForLoadState('domcontentloaded', {timeout:30000}).catch(()=>{}),
+              page.locator('button[type="submit"]').click()
+            ]);
+            await page.waitForTimeout(3000);
+            console.log('form-final-url', page.url());
+            console.log('form-page-title', await page.title());
+            console.log('form-body-snippet', (await page.locator('body').innerText()).slice(0,800).replace(/\s+/g,' '));
+
+            if (errors.length) {
+              console.log('browser-console-errors', JSON.stringify(errors));
+              throw new Error('Browser console/page errors detected');
+            }
+
+            await browser.close();
+            console.log('LIVE BROWSER QA PASSED');
+          })().catch(err => { console.error(err); process.exit(1); });
+          NODE
+          node /tmp/qa.js
