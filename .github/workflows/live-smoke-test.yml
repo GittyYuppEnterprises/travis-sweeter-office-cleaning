@@ -1,0 +1,58 @@
+name: Live Site Smoke Test
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait briefly for Pages edge propagation
+        run: sleep 15
+
+      - name: Validate live site endpoints and SEO
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/"
+
+          status() {
+            code=$(curl -sS -L -o /tmp/body "$1" -w "%{http_code}")
+            echo "$1 -> HTTP $code"
+            test "$code" = "200"
+          }
+
+          status "$BASE"
+          cp /tmp/body /tmp/home.html
+          grep -Fq "Commercial office cleaning in St. Cloud." /tmp/home.html
+          grep -Fq '<link rel="canonical" href="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/">' /tmp/home.html
+          grep -Fq 'action="https://formsubmit.co/travissweeter@gmail.com"' /tmp/home.html
+          grep -Fq 'name="Lead Source" value="Website / organic"' /tmp/home.html
+          grep -Fq "Business card QR" /tmp/home.html
+          grep -Fq '"serviceType":"Recurring commercial office and janitorial cleaning"' /tmp/home.html
+          echo "Homepage content/SEO/form checks passed."
+
+          status "${BASE}?src=card"
+          grep -Fq "Commercial office cleaning in St. Cloud." /tmp/body
+          echo "Tracked QR destination passed."
+
+          status "${BASE}thanks.html"
+          grep -Fq "Thanks — I got your request." /tmp/body
+          echo "Thank-you page passed."
+
+          status "${BASE}privacy.html"
+          grep -Fq "<h1>Privacy</h1>" /tmp/body
+          echo "Privacy page passed."
+
+          status "${BASE}robots.txt"
+          grep -Fq "Sitemap: ${BASE}sitemap.xml" /tmp/body
+          echo "robots.txt passed."
+
+          status "${BASE}sitemap.xml"
+          grep -Fq "<loc>${BASE}</loc>" /tmp/body
+          grep -Fq "<lastmod>2026-10-21</lastmod>" /tmp/body
+          echo "sitemap.xml passed."
+
+          echo "ALL LIVE SMOKE TESTS PASSED."
