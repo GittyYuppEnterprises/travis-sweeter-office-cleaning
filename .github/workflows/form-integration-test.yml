@@ -1,0 +1,33 @@
+name: Quote Form Integration Test
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  submit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit clearly labeled test lead
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENDPOINT="https://formsubmit.co/travissweeter@gmail.com"
+          NEXT="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/thanks.html"
+          code=$(curl -sS -L -o /tmp/form-response.html -w "%{http_code}" \
+            -X POST "$ENDPOINT" \
+            --data-urlencode "Name=AUTOMATED SITE TEST" \
+            --data-urlencode "Business=AUTOMATED WEBSITE TEST - IGNORE" \
+            --data-urlencode "Phone=320.420.2324" \
+            --data-urlencode "Frequency=Not sure yet" \
+            --data-urlencode "Office Size=800-2,000 sq ft" \
+            --data-urlencode "Details=Automated integration test from GitHub Actions. No follow-up needed." \
+            --data-urlencode "Lead Source=Automated integration test" \
+            --data-urlencode "_subject=TEST - commercial cleaning website form" \
+            --data-urlencode "_captcha=false" \
+            --data-urlencode "_template=table" \
+            --data-urlencode "_next=$NEXT")
+          echo "FormSubmit final HTTP status: $code"
+          test "$code" -ge 200 -a "$code" -lt 500
+          echo "Form endpoint accepted the request without a server error."
