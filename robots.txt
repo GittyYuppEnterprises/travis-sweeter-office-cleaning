@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/sitemap.xml
