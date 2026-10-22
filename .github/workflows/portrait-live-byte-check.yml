@@ -1,0 +1,29 @@
+name: Portrait Live Byte Check
+
+on:
+  push:
+    paths:
+      - '.github/workflows/portrait-live-byte-check.yml'
+  workflow_dispatch:
+
+jobs:
+  verify-live-portrait:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify exact live portrait
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/travis-owner-portrait-900.jpg?v=20261022g"
+          for i in {1..12}; do
+            if curl -fsSL "$url" -o portrait-live.jpg; then
+              if [ "$(wc -c < portrait-live.jpg)" -eq 83769 ] && echo "484d9d87efe627af9977b2836fdf65b5fc77c1065d856cec35b0a571d8b007b7  portrait-live.jpg" | sha256sum --check -; then
+                file portrait-live.jpg
+                echo "LIVE PORTRAIT EXACTLY MATCHES CLEAN MASTER"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "Live portrait did not match clean master"
+          exit 1
