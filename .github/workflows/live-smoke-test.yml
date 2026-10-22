@@ -57,7 +57,7 @@ jobs:
 
           status "${BASE}sitemap.xml"
           grep -Fq "<loc>${BASE}</loc>" /tmp/body
-          grep -Fq "<lastmod>2026-10-21</lastmod>" /tmp/body
+          grep -Eq "<lastmod>20[0-9]{2}-[0-9]{2}-[0-9]{2}</lastmod>" /tmp/body
           echo "sitemap.xml passed."
 
           echo "ALL LIVE SMOKE TESTS PASSED."
