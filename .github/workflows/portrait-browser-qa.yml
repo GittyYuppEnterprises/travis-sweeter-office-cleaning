@@ -1,8 +1,6 @@
 name: Portrait Browser Compatibility QA
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
 
 jobs:
