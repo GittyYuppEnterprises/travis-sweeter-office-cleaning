@@ -1,29 +1,49 @@
 name: Portrait Live Byte Check
 
 on:
-  push:
-    paths:
-      - '.github/workflows/portrait-live-byte-check.yml'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
 
 jobs:
   verify-live-portrait:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download and verify exact live portrait
+      - uses: actions/checkout@v4
+      - name: Compare live owner portrait with repository asset
         shell: bash
         run: |
-          set -euo pipefail
-          url="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/travis-owner-portrait-900.jpg?v=20261022g"
-          for i in {1..12}; do
-            if curl -fsSL "$url" -o portrait-live.jpg; then
-              if [ "$(wc -c < portrait-live.jpg)" -eq 83769 ] && echo "484d9d87efe627af9977b2836fdf65b5fc77c1065d856cec35b0a571d8b007b7  portrait-live.jpg" | sha256sum --check -; then
-                file portrait-live.jpg
-                echo "LIVE PORTRAIT EXACTLY MATCHES CLEAN MASTER"
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          echo "Live portrait did not match clean master"
-          exit 1
+          python3 - <<'PY'
+          import hashlib, pathlib, re, time, urllib.request
+          site='https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/'
+          html=pathlib.Path('index.html').read_text()
+          m=re.search(r'class="owner-photo"\s+src="([^"]+)"',html)
+          assert m, 'No owner image in local HTML'
+          src=m.group(1)
+          assert src.split('?')[0].startswith('travis-owner-portrait-clean-'), 'Still referencing an old or unverified portrait'
+          data=pathlib.Path(src.split('?')[0]).read_bytes()
+          sha=hashlib.sha256(data).hexdigest()
+          for attempt in range(12):
+              try:
+                  req=urllib.request.Request(site+'?assetcheck='+str(time.time()),headers={'Cache-Control':'no-cache'})
+                  text=urllib.request.urlopen(req,timeout=30).read().decode('utf8')
+                  assert f'class="owner-photo" src="{src}"' in text,'Live HTML has stale src'
+                  u=site+src
+                  req=urllib.request.Request(u,headers={'Cache-Control':'no-cache'})
+                  with urllib.request.urlopen(req,timeout=30) as response:
+                      assert response.status==200,'Asset HTTP status incorrect'
+                      assert 'image/jpeg' in response.headers.get('Content-Type',''),'Wrong MIME type'
+                      live=response.read()
+                  assert live==data,'Deployed bytes differ from clean source'
+                  print('PASS: deployed image is exact byte-for-byte copy of fresh source',len(data),'SHA256',sha)
+                  break
+              except Exception as e:
+                  print('Deploy propagation attempt',attempt+1,'of 12:',e)
+                  if attempt==11:raise
+                  time.sleep(5)
+          PY

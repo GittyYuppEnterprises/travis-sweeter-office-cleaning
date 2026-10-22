@@ -1,98 +1,166 @@
-name: Portrait Browser Compatibility QA
+name: Portrait Browser Visual QA
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'index.html'
-      - 'travis-owner-portrait-900.jpg'
-      - '.github/workflows/portrait-browser-qa.yml'
+  workflow_run:
+    workflows: ["Deploy GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
 
 jobs:
-  portrait-qa:
+  visual-qa:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Install Playwright browsers
+      - uses: actions/checkout@v4
+      - name: Install image analysis and six browser configurations
         run: |
-          npm init -y >/dev/null 2>&1
-          npm install playwright >/dev/null 2>&1
-          npx playwright install chromium firefox webkit --with-deps >/dev/null 2>&1
-
-      - name: Verify live portrait bytes
+          npm install --no-save playwright@1.56.1 sharp@0.34.4
+          npx playwright install chromium firefox webkit --with-deps
+      - name: Inspect LIVE source, decoded pixels, and browser screenshots
         shell: bash
         run: |
-          set -euo pipefail
-          curl -fsSL "https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/travis-owner-portrait-900.jpg?v=20261022g" -o live-portrait.jpg
-          test "$(wc -c < live-portrait.jpg)" -eq 83769
-          echo "484d9d87efe627af9977b2836fdf65b5fc77c1065d856cec35b0a571d8b007b7  live-portrait.jpg" | sha256sum --check -
-          file live-portrait.jpg
-
-      - name: Verify portrait on Safari/WebKit and major browser engines
-        shell: bash
-        run: |
-          cat > portrait-qa.js <<'NODE'
+          mkdir -p portrait-qa-results
+          cat > portrait-qa-visual.js <<'NODE'
           const { chromium, firefox, webkit, devices } = require('playwright');
+          const sharp = require('sharp');
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+          const assert = require('assert/strict');
+          const SITE = 'https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/';
+          const out = 'portrait-qa-results';
+          const html = fs.readFileSync('index.html', 'utf8');
+          const match = html.match(/<img[^>]*class="owner-photo"[^>]*src="([^"]+)"/);
+          assert(match, 'Missing .owner-photo src in index.html');
+          const asset = match[1].split('?')[0];
+          assert(/^travis-owner-portrait-clean-\d{8}(?:-v\d+)?\.jpg$/.test(asset), `Unexpected portrait filename: ${asset}`);
+          const local = path.resolve(asset);
+          assert(fs.existsSync(local), `Missing clean portrait asset: ${asset}`);
+          const bytes = fs.readFileSync(local);
+          const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+          const jpeg = sharp(bytes, { failOn: 'error' });
 
-          const url = 'https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/?portrait-qa=20261022g';
-
-          async function verify(label, engine, contextOptions) {
-            const browser = await engine.launch({ headless: true });
-            const context = await browser.newContext(contextOptions);
-            const page = await context.newPage();
-
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-            const img = page.locator('.owner-photo');
-            await img.scrollIntoViewIfNeeded();
-            await page.waitForFunction(() => {
-              const el = document.querySelector('.owner-photo');
-              return el && el.complete && el.naturalWidth > 0;
-            }, { timeout: 15000 });
-            await page.waitForTimeout(300);
-
-            const state = await img.evaluate(el => ({
-              complete: el.complete,
-              naturalWidth: el.naturalWidth,
-              naturalHeight: el.naturalHeight,
-              renderedWidth: Math.round(el.getBoundingClientRect().width),
-              renderedHeight: Math.round(el.getBoundingClientRect().height),
-              currentSrc: el.currentSrc,
-              overflow: document.documentElement.scrollWidth > window.innerWidth + 1
-            }));
-
-            console.log(label, JSON.stringify(state));
-
-            if (!state.complete) throw new Error(label + ': image not complete');
-            if (state.naturalWidth !== 900 || state.naturalHeight !== 1125) {
-              throw new Error(label + ': expected 900x1125 portrait, got ' + state.naturalWidth + 'x' + state.naturalHeight);
+          function metrics(buf, width, height, y0, y1) {
+            let n=0, sum=0, sum2=0, min=255, max=0;
+            const samples = new Set();
+            for (let y=Math.floor(height*y0); y<Math.floor(height*y1); y+=2) {
+              for (let x=Math.floor(width*.12); x<Math.floor(width*.88); x+=2) {
+                const k=(y*width+x)*3;
+                const L=(buf[k]*.2126 + buf[k+1]*.7152 + buf[k+2]*.0722);
+                sum+=L; sum2+=L*L; n++;
+                if (L<min) min=L;
+                if (L>max) max=L;
+                if ((x%10)<2 && (y%10)<2) samples.add(`${buf[k]>>3},${buf[k+1]>>3},${buf[k+2]>>3}`);
+              }
             }
-            if (!state.currentSrc.includes('/travis-owner-portrait-900.jpg') || !state.currentSrc.includes('v=20261022g')) {
-              throw new Error(label + ': unexpected portrait source: ' + state.currentSrc);
-            }
-            if (state.renderedWidth < 150 || state.renderedHeight < 180) {
-              throw new Error(label + ': portrait rendered too small');
-            }
-            if (state.overflow) throw new Error(label + ': horizontal overflow');
-
-            await page.locator('.owner-photo-shell').screenshot({ path: 'portrait-' + label + '.png' });
-            await browser.close();
+            return { std:Math.sqrt(Math.max(0,sum2/n-(sum/n)**2)), range:max-min, colors:samples.size };
           }
 
-          (async () => {
-            await verify('webkit-iphone', webkit, { ...devices['iPhone 14'] });
-            await verify('webkit-desktop', webkit, { viewport: { width: 1440, height: 1000 } });
-            await verify('chromium-mobile', chromium, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true });
-            await verify('chromium-desktop', chromium, { viewport: { width: 1440, height: 1000 } });
-            await verify('firefox-mobile', firefox, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
-            await verify('firefox-desktop', firefox, { viewport: { width: 1440, height: 1000 } });
-            console.log('PORTRAIT COMPATIBILITY QA PASSED');
-          })().catch(err => { console.error(err); process.exit(1); });
-          NODE
-          node portrait-qa.js
+          async function verifyMaster() {
+            const m=await jpeg.metadata();
+            assert.equal(m.width,900); assert.equal(m.height,1125);
+            assert.equal(m.format,'jpeg');
+            assert(!m.isProgressive, 'Must use baseline JPEG');
+            assert(m.space==='srgb', 'Expected sRGB, got '+m.space);
+            const x=await sharp(bytes).removeAlpha().raw().toBuffer({resolveWithObject:true});
+            const parts=['top','middle','lower'].map((label,i)=>({label,...metrics(x.data,x.info.width,x.info.height,i/3,(i+1)/3)}));
+            console.log('SOURCE PIXELS',JSON.stringify({file:asset,sha256:digest,parts}));
+            for (const v of parts) assert(v.std>15 && v.range>70 && v.colors>90, `Flat/corrupt source ${v.label}: ${JSON.stringify(v)}`);
+            return parts;
+          }
 
-      - name: Upload portrait QA screenshots
+          async function verifyDeployedBytes() {
+            let last='';
+            for(let attempt=1;attempt<=12;attempt++) {
+              try {
+                const page=await fetch(SITE+'?verify-portrait='+Date.now()+'-'+attempt,{cache:'no-store'});
+                assert(page.ok, 'Live HTML HTTP '+page.status);
+                const text=await page.text();
+                assert(text.includes(`class="owner-photo" src="${match[1]}"`), 'Live HTML still points to an old image');
+                const img=await fetch(new URL(match[1],SITE).href,{cache:'no-store'});
+                assert(img.ok,'Live image HTTP '+img.status);
+                assert((img.headers.get('content-type')||'').includes('image/jpeg'), 'Wrong image MIME');
+                const data=Buffer.from(await img.arrayBuffer());
+                assert(data.equals(bytes), 'Live image bytes differ from checked-out clean file');
+                console.log('LIVE BYTES PASS',JSON.stringify({file:asset,bytes:data.length,sha256:digest}));
+                return;
+              } catch(e) {last=e.message; console.log(`Deploy propagation ${attempt}/12: ${last}`); await new Promise(r=>setTimeout(r,5000));}
+            }
+            throw new Error('Live deployment did not publish verified image: '+last);
+          }
+
+          async function compareToSource(pngBuffer,label) {
+            const W=360,H=450;
+            const opts={fit:'fill',kernel:'lanczos3'};
+            const src=await sharp(bytes).resize(W,H,opts).removeAlpha().raw().toBuffer();
+            const shot=await sharp(pngBuffer).resize(W,H,opts).removeAlpha().raw().toBuffer();
+            let total=0,count=0; const segments=[];
+            for(let part=0;part<3;part++) {
+              let sum=0,n=0;
+              for(let y=Math.floor(part*H/3)+9;y<Math.floor((part+1)*H/3)-9;y++){
+                for(let x=30;x<W-30;x++){
+                  const i=(y*W+x)*3;
+                  sum+=Math.abs(shot[i]-src[i])+Math.abs(shot[i+1]-src[i+1])+Math.abs(shot[i+2]-src[i+2]);
+                  n+=3;
+                }
+              }
+              const mae=sum/n;segments.push({third:part+1,mae:Number(mae.toFixed(2))});
+              assert(mae<38, `${label} third ${part+1}: screenshot differs from known good pixels (MAE ${mae.toFixed(2)}).`);
+              total+=sum;count+=n;
+            }
+            console.log(label,'PIXEL COMPARISON',JSON.stringify({segments,overallMae:Number((total/count).toFixed(2))}));
+            const raw=await sharp(pngBuffer).resize(360,450,opts).removeAlpha().raw().toBuffer();
+            for(let part=0;part<3;part++){
+              const m=metrics(raw,W,H,part/3,(part+1)/3);
+              assert(m.std>12&&m.range>60&&m.colors>50,`${label} flat screenshot third ${part+1}: ${JSON.stringify(m)}`);
+            }
+          }
+
+          async function verify(label,engine,options) {
+            const browser=await engine.launch({headless:true});
+            try {
+              const context=await browser.newContext(options);
+              const page=await context.newPage();
+              await page.goto(SITE+'?portrait-qa='+Date.now(),{waitUntil:'networkidle',timeout:60000});
+              const img=page.locator('.owner-photo');
+              await img.scrollIntoViewIfNeeded();
+              await img.evaluate(el=>el.decode());
+              const state=await img.evaluate(el=>({complete:el.complete,naturalWidth:el.naturalWidth,naturalHeight:el.naturalHeight,renderedWidth:el.getBoundingClientRect().width,renderedHeight:el.getBoundingClientRect().height,src:el.getAttribute('src'),overflow:document.documentElement.scrollWidth>window.innerWidth+1}));
+              console.log(label,'BROWSER',JSON.stringify(state));
+              assert(state.complete && state.naturalWidth===900 && state.naturalHeight===1125,`${label}: image incomplete or wrong dimensions`);
+              assert.equal(state.src,match[1],`${label}: browser is using stale filename`);
+              assert(state.renderedWidth>=150&&state.renderedHeight>=180,`${label}: rendered too small`);
+              assert(!state.overflow,`${label}: horizontal overflow`);
+              await page.addStyleTag({content:'.owner-badge{visibility:hidden!important}.owner-photo{border-radius:0!important}'});
+              const screenshot=await img.screenshot({path:`${out}/${label}-portrait.png`,animations:'disabled',scale:'css'});
+              await compareToSource(screenshot,label);
+              await page.screenshot({path:`${out}/${label}-page.png`,fullPage:true,animations:'disabled'});
+              await context.close();
+            } finally {await browser.close();}
+          }
+
+          (async()=>{
+            await verifyMaster();
+            await verifyDeployedBytes();
+            await verify('webkit-iphone',webkit,{...devices['iPhone 14']});
+            await verify('webkit-desktop',webkit,{viewport:{width:1440,height:1000}});
+            await verify('chromium-mobile',chromium,{viewport:{width:390,height:844},deviceScaleFactor:3,isMobile:true,hasTouch:true});
+            await verify('chromium-desktop',chromium,{viewport:{width:1440,height:1000}});
+            await verify('firefox-mobile',firefox,{viewport:{width:390,height:844},deviceScaleFactor:3});
+            await verify('firefox-desktop',firefox,{viewport:{width:1440,height:1000}});
+            console.log('ALL SIX PORTRAIT VISUAL TESTS PASS');
+          })().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+          node portrait-qa-visual.js
+      - name: Upload browser screenshots for human iPhone/WebKit review
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: portrait-browser-qa
-          path: portrait-*.png
-          if-no-files-found: ignore
+          name: portrait-visual-qa-screenshots
+          path: portrait-qa-results/*.png
+          if-no-files-found: warn
+          retention-days: 14
