@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Install Playwright for Chrome and iPhone WebKit
         run: |
-          npm install --no-save playwright@1.56.1
+          npm install --no-save playwright@1.56.1 sharp@0.34.4
           npx playwright install chromium webkit --with-deps
       - name: Check live page, forms, QR attribution, and screenshots
         shell: bash
@@ -27,6 +27,7 @@ jobs:
           cat > site-qa.cjs <<'NODE'
           const {chromium,webkit,devices} = require('playwright');
           const assert = require('node:assert/strict');
+          const sharp = require('sharp');
           const url='https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/';
           async function check(page,width,label) {
             const errors=[];
@@ -78,7 +79,23 @@ jobs:
             await page.goto(url+'?src=card',{waitUntil:'load',timeout:45000});
             assert.equal(await page.locator('#lead-source').inputValue(),'Business card QR',label+' QR source');
             assert.equal(errors.length,0,label+' browser errors '+errors.join(', '));
-            if(['chromium-390','chromium-1440','webkit-iphone'].includes(label))await page.screenshot({path:'screenshots/'+label+'.png',fullPage:true,animations:'disabled'});
+            if(['chromium-390','chromium-1440','webkit-iphone'].includes(label)) {
+              const img = page.locator('.owner-photo');
+              await img.scrollIntoViewIfNeeded();
+              await img.evaluate(el => el.decode());
+              const photo = await img.screenshot({path:'screenshots/'+label+'-portrait.png',animations:'disabled',scale:'css'});
+              const {data,info} = await sharp(photo).removeAlpha().raw().toBuffer({resolveWithObject:true});
+              for (let third=0;third<3;third++) {
+                const colors=new Set();
+                for(let y=Math.floor(info.height*third/3)+10;y<Math.floor(info.height*(third+1)/3)-10;y+=3)
+                  for(let x=Math.floor(info.width*0.15);x<Math.floor(info.width*0.85);x+=3) {
+                    const i=(y*info.width+x)*3;
+                    colors.add((data[i]>>4)+','+(data[i+1]>>4)+','+(data[i+2]>>4));
+                  }
+                assert(colors.size>90,label+' portrait appears blank/corrupt in third '+(third+1)+': '+colors.size+' unique colors');
+              }
+              await page.screenshot({path:'screenshots/'+label+'.png',fullPage:true,animations:'disabled'});
+            }
             console.log('PASS '+label+' '+JSON.stringify({width,quote:true,qr:true,layout:true,jsErrors:0}));
             // Never submit a test lead or generate an email.
           }
