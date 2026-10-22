@@ -1,0 +1,45 @@
+name: Build Full-Resolution Owner Portrait
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.asset-build900/**'
+      - '.github/workflows/build-portrait900.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify JPEG
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .asset-build900/part*.txt | base64 --decode > travis-owner-portrait-900.jpg
+          test "$(wc -c < travis-owner-portrait-900.jpg)" -eq 83769
+          test "$(head -c 2 travis-owner-portrait-900.jpg | xxd -p)" = "ffd8"
+          test "$(tail -c 2 travis-owner-portrait-900.jpg | xxd -p)" = "ffd9"
+          file travis-owner-portrait-900.jpg | grep -q "JPEG image data"
+          echo "Portrait JPEG verified: $(file travis-owner-portrait-900.jpg)"
+
+      - name: Commit portrait
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add travis-owner-portrait-900.jpg
+          if git diff --cached --quiet; then
+            echo "Portrait already up to date."
+            exit 0
+          fi
+          git commit -m "Build full-resolution Safari-safe owner portrait"
+          git push
