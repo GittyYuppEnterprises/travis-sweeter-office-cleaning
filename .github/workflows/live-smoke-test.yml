@@ -3,6 +3,11 @@ name: Live Site Smoke Test
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - ".asset-build/**"
+      - ".asset-build400/**"
+      - ".asset-build900/**"
+      - ".asset-build900-final/**"
   workflow_dispatch:
 
 jobs:
