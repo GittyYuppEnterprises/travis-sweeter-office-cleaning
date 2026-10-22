@@ -2,6 +2,11 @@ name: Portrait Browser Compatibility QA
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'index.html'
+      - 'travis-owner-portrait-900.jpg'
+      - '.github/workflows/portrait-browser-qa.yml'
 
 jobs:
   portrait-qa:
@@ -13,45 +18,72 @@ jobs:
           npm install playwright >/dev/null 2>&1
           npx playwright install chromium firefox webkit --with-deps >/dev/null 2>&1
 
-      - name: Verify portrait on major browser engines
+      - name: Verify portrait on Safari/WebKit and major browser engines
         shell: bash
         run: |
           cat > portrait-qa.js <<'NODE'
-          const { chromium, firefox, webkit } = require('playwright');
+          const { chromium, firefox, webkit, devices } = require('playwright');
+
+          const url = 'https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/?portrait-qa=900-final';
+
+          async function verify(label, engine, contextOptions) {
+            const browser = await engine.launch({ headless: true });
+            const context = await browser.newContext(contextOptions);
+            const page = await context.newPage();
+
+            await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
+            const img = page.locator('.owner-photo');
+            await img.scrollIntoViewIfNeeded();
+            await page.waitForFunction(() => {
+              const el = document.querySelector('.owner-photo');
+              return el && el.complete && el.naturalWidth > 0;
+            }, { timeout: 15000 });
+            await page.waitForTimeout(300);
+
+            const state = await img.evaluate(el => ({
+              complete: el.complete,
+              naturalWidth: el.naturalWidth,
+              naturalHeight: el.naturalHeight,
+              renderedWidth: Math.round(el.getBoundingClientRect().width),
+              renderedHeight: Math.round(el.getBoundingClientRect().height),
+              currentSrc: el.currentSrc,
+              overflow: document.documentElement.scrollWidth > window.innerWidth + 1
+            }));
+
+            console.log(label, JSON.stringify(state));
+
+            if (!state.complete) throw new Error(label + ': image not complete');
+            if (state.naturalWidth !== 900 || state.naturalHeight !== 1125) {
+              throw new Error(label + ': expected 900x1125 portrait, got ' + state.naturalWidth + 'x' + state.naturalHeight);
+            }
+            if (!state.currentSrc.includes('/travis-owner-portrait-900.jpg')) {
+              throw new Error(label + ': unexpected portrait source: ' + state.currentSrc);
+            }
+            if (state.renderedWidth < 150 || state.renderedHeight < 180) {
+              throw new Error(label + ': portrait rendered too small');
+            }
+            if (state.overflow) throw new Error(label + ': horizontal overflow');
+
+            await page.locator('.owner-photo-shell').screenshot({ path: 'portrait-' + label + '.png' });
+            await browser.close();
+          }
 
           (async () => {
-            const url = 'https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/';
-            const engines = { chromium, firefox, webkit };
-            const widths = [390, 1440];
-
-            for (const [name, engine] of Object.entries(engines)) {
-              const browser = await engine.launch({headless:true});
-              for (const width of widths) {
-                const page = await browser.newPage({ viewport: { width, height: 1000 } });
-                await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-                const img = page.locator('.owner-photo');
-                await img.scrollIntoViewIfNeeded();
-                await page.waitForTimeout(500);
-                const state = await img.evaluate(el => ({
-                  complete: el.complete,
-                  naturalWidth: el.naturalWidth,
-                  naturalHeight: el.naturalHeight,
-                  renderedWidth: el.getBoundingClientRect().width,
-                  renderedHeight: el.getBoundingClientRect().height,
-                  srcPrefix: el.currentSrc.slice(0, 30),
-                  overflow: document.documentElement.scrollWidth > window.innerWidth + 1
-                }));
-                console.log(name, width, JSON.stringify(state));
-                if (!state.complete) throw new Error(name+' '+width+': image not complete');
-                if (state.naturalWidth < 200 || state.naturalHeight < 250) throw new Error(name+' '+width+': portrait did not decode');
-                if (state.renderedWidth < 150 || state.renderedHeight < 180) throw new Error(name+' '+width+': portrait rendered too small');
-                if (!state.srcPrefix.startsWith('data:image/jpeg;base64,')) throw new Error(name+' '+width+': unexpected portrait source');
-                if (state.overflow) throw new Error(name+' '+width+': horizontal overflow');
-                await page.close();
-              }
-              await browser.close();
-            }
+            await verify('webkit-iphone', webkit, { ...devices['iPhone 14'] });
+            await verify('webkit-desktop', webkit, { viewport: { width: 1440, height: 1000 } });
+            await verify('chromium-mobile', chromium, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true });
+            await verify('chromium-desktop', chromium, { viewport: { width: 1440, height: 1000 } });
+            await verify('firefox-mobile', firefox, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+            await verify('firefox-desktop', firefox, { viewport: { width: 1440, height: 1000 } });
             console.log('PORTRAIT COMPATIBILITY QA PASSED');
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
           node portrait-qa.js
+
+      - name: Upload portrait QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portrait-browser-qa
+          path: portrait-*.png
+          if-no-files-found: ignore
