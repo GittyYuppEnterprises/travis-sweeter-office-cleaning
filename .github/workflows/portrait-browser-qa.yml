@@ -135,9 +135,10 @@ jobs:
               assert.equal(state.src,match[1],`${label}: browser is using stale filename`);
               assert(state.renderedWidth>=150&&state.renderedHeight>=180,`${label}: rendered too small`);
               assert(!state.overflow,`${label}: horizontal overflow`);
-              await page.addStyleTag({content:'.owner-badge{visibility:hidden!important}.owner-photo{border-radius:0!important}'});
+              const qaStyle = await page.addStyleTag({content:'.owner-badge{visibility:hidden!important}.owner-photo{border-radius:0!important}'});
               const screenshot=await img.screenshot({path:`${out}/${label}-portrait.png`,animations:'disabled',scale:'css'});
               await compareToSource(screenshot,label);
+              await qaStyle.evaluate(el => el.remove()); // Preserve real framing and badge in full-page artifact.
               await page.screenshot({path:`${out}/${label}-page.png`,fullPage:true,animations:'disabled'});
               await context.close();
             } finally {await browser.close();}
