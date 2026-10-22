@@ -1,0 +1,109 @@
+name: Conversion, Form and Responsive QA
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy GitHub Pages"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Install Playwright for Chrome and iPhone WebKit
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install chromium webkit --with-deps
+      - name: Check live page, forms, QR attribution, and screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p screenshots
+          cat > site-qa.cjs <<'NODE'
+          const {chromium,webkit,devices} = require('playwright');
+          const assert = require('node:assert/strict');
+          const url='https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/';
+          async function check(page,width,label) {
+            const errors=[];
+            page.on('pageerror',e=>errors.push(e.message));
+            await page.goto(url,{waitUntil:'load',timeout:45000});
+            const facts=await page.evaluate(()=>{
+              const q=s=>document.querySelector(s);
+              const form=q('.lead-form');
+              return {
+                title:document.title,
+                description:q('meta[name="description"]')?.content,
+                canonical:q('link[rel="canonical"]')?.href,
+                h1:q('h1')?.textContent,
+                width:innerWidth,
+                scrollWidth:document.documentElement.scrollWidth,
+                action:form?.action,
+                method:form?.method,
+                next:form?.querySelector('[name="_next"]')?.value,
+                hasHoneypot:!!form?.querySelector('[name="_honey"]'),
+                required:[...form.querySelectorAll('[required]')].map(x=>x.name),
+                buttonHeight:form.querySelector('button[type="submit"]').getBoundingClientRect().height,
+                owner:q('.owner-photo')?.getAttribute('src'),
+                mobileCTA:getComputedStyle(q('.mobile-bar')).display,
+                anchorsBroken:[...document.querySelectorAll('a[href^="#"]')].filter(a=>!document.getElementById(a.getAttribute('href').slice(1))).map(a=>a.getAttribute('href')),
+                textLinks:document.querySelectorAll('a[href^="sms:"]').length,
+                phoneLinks:document.querySelectorAll('a[href^="tel:"]').length
+              };
+            });
+            assert(facts.title.includes('Commercial Office Cleaning'),label+' title');
+            assert(facts.description.includes('St. Cloud'),label+' description');
+            assert.equal(facts.canonical,url,label+' canonical');
+            assert(facts.h1.includes('Commercial office cleaning in St. Cloud'),label+' H1');
+            assert(facts.scrollWidth<=facts.width+1,label+' horizontal overflow');
+            assert.equal(facts.action,'https://formsubmit.co/travissweeter@gmail.com',label+' form action');
+            assert.equal(facts.method,'post',label+' form method');
+            assert.equal(facts.next,url+'thanks.html',label+' redirect');
+            assert(facts.hasHoneypot,label+' honeypot');
+            assert(facts.required.includes('Name') && facts.required.includes('Phone'),label+' required fields');
+            assert(facts.buttonHeight>=44,label+' submit tap target');
+            assert(facts.owner.startsWith('travis-owner-portrait-clean-'),label+' portrait source');
+            assert.equal(facts.anchorsBroken.length,0,label+' broken anchors');
+            assert(facts.textLinks>0&&facts.phoneLinks>0,label+' contact paths');
+            if(width<=600)assert.equal(facts.mobileCTA,'grid',label+' missing mobile CTA');
+            else assert.equal(facts.mobileCTA,'none',label+' mobile CTA on desktop');
+            assert.equal(await page.locator('.lead-form').evaluate(f=>f.checkValidity()),false,label+' blank form validation');
+            await page.locator('input[name="Name"]').fill('READ ONLY QA');
+            await page.locator('input[name="Phone"]').fill('3204202324');
+            assert.equal(await page.locator('.lead-form').evaluate(f=>f.checkValidity()),true,label+' valid form rejected');
+            await page.goto(url+'?src=card',{waitUntil:'load',timeout:45000});
+            assert.equal(await page.locator('#lead-source').inputValue(),'Business card QR',label+' QR source');
+            assert.equal(errors.length,0,label+' browser errors '+errors.join(', '));
+            if(['chromium-390','chromium-1440','webkit-iphone'].includes(label))await page.screenshot({path:'screenshots/'+label+'.png',fullPage:true,animations:'disabled'});
+            console.log('PASS '+label+' '+JSON.stringify({width,quote:true,qr:true,layout:true,jsErrors:0}));
+            // Never submit a test lead or generate an email.
+          }
+          (async()=>{
+            const browser=await chromium.launch();
+            try{
+              for(const width of [320,375,390,600,768,1024,1440]){
+                const ctx=await browser.newContext({viewport:{width,height:900}});
+                try{await check(await ctx.newPage(),width,'chromium-'+width);}finally{await ctx.close();}
+              }
+            }finally{await browser.close();}
+            const safari=await webkit.launch();
+            try{
+              const ctx=await safari.newContext({...devices['iPhone 14']});
+              try{await check(await ctx.newPage(),390,'webkit-iphone');}finally{await ctx.close();}
+            }finally{await safari.close();}
+            console.log('ALL WEBSITE CONVERSION QA PASSED');
+          })().catch(e=>{console.error(e);process.exitCode=1;});
+          NODE
+          node site-qa.cjs
+      - name: Preserve mobile/desktop screenshots for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-conversion-responsive-screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14
