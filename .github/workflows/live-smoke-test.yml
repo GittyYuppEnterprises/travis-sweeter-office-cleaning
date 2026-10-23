@@ -33,6 +33,7 @@ jobs:
           cp /tmp/body /tmp/home.html
           grep -Fq "Commercial office cleaning in St. Cloud." /tmp/home.html
           grep -Fq '<link rel="canonical" href="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/">' /tmp/home.html
+          grep -Fq '<meta name="google-site-verification" content="h-bQXUeSeOpok8qkmaTPeR1EIUcNOamwOfAwrDmzs3w" />' /tmp/home.html
           grep -Fq 'action="https://formsubmit.co/travissweeter@gmail.com"' /tmp/home.html
           grep -Fq 'name="Lead Source" value="Website / organic"' /tmp/home.html
           grep -Fq "Business card QR" /tmp/home.html
