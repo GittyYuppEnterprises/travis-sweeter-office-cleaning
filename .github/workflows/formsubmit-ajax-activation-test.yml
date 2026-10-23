@@ -16,7 +16,7 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -X POST "$ENDPOINT" \
-            --data '{"name":"AUTOMATED SITE ACTIVATION TEST","business":"AUTOMATED WEBSITE TEST - IGNORE","phone":"320.420.2324","message":"One-time AJAX activation test. No follow-up needed.","Lead Source":"Automated integration test","_subject":"TEST - commercial cleaning website activation"}')
+            --data '{"name":"AUTOMATED SITE ACTIVATION TEST","business":"AUTOMATED WEBSITE TEST - IGNORE","phone":"2025550137","message":"One-time AJAX activation test. No follow-up needed.","Lead Source":"Automated integration test","_subject":"TEST - commercial cleaning website activation"}')
           echo "HTTP: $code"
           echo "Response:"
           cat /tmp/response.json

@@ -17,7 +17,7 @@ jobs:
             -X POST "$ENDPOINT" \
             --data-urlencode "Name=AUTOMATED SITE TEST" \
             --data-urlencode "Business=AUTOMATED WEBSITE TEST - IGNORE" \
-            --data-urlencode "Phone=320.420.2324" \
+            --data-urlencode "Phone=2025550137" \
             --data-urlencode "Frequency=Not sure yet" \
             --data-urlencode "Office Size=800-2,000 sq ft" \
             --data-urlencode "Details=Automated integration test from GitHub Actions. No follow-up needed." \

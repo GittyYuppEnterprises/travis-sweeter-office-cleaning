@@ -74,7 +74,7 @@ jobs:
             else assert.equal(facts.mobileCTA,'none',label+' mobile CTA on desktop');
             assert.equal(await page.locator('.lead-form').evaluate(f=>f.checkValidity()),false,label+' blank form validation');
             await page.locator('input[name="Name"]').fill('READ ONLY QA');
-            await page.locator('input[name="Phone"]').fill('3204202324');
+            await page.locator('input[name="Phone"]').fill('2025550137');
             assert.equal(await page.locator('.lead-form').evaluate(f=>f.checkValidity()),true,label+' valid form rejected');
             await page.goto(url+'?src=card',{waitUntil:'load',timeout:45000});
             assert.equal(await page.locator('#lead-source').inputValue(),'Business card QR',label+' QR source');
