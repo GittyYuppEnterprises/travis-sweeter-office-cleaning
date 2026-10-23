@@ -32,6 +32,9 @@ jobs:
           status "$BASE"
           cp /tmp/body /tmp/home.html
           grep -Fq "Commercial office cleaning in St. Cloud." /tmp/home.html
+          grep -Fq '<title>St. Cloud Commercial Office Cleaning | Office Janitorial Services MN</title>' /tmp/home.html
+          grep -Fq '"name":"St. Cloud Commercial Office Cleaning"' /tmp/home.html
+          grep -Fq '<span class="brand-mark" aria-hidden="true">SC</span>' /tmp/home.html
           grep -Fq '<link rel="canonical" href="https://gittyyuppenterprises.github.io/travis-sweeter-office-cleaning/">' /tmp/home.html
           grep -Fq '<meta name="google-site-verification" content="h-bQXUeSeOpok8qkmaTPeR1EIUcNOamwOfAwrDmzs3w" />' /tmp/home.html
           grep -Fq 'action="https://formsubmit.co/travissweeter@gmail.com"' /tmp/home.html

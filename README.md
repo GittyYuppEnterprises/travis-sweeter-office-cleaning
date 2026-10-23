@@ -1,4 +1,4 @@
-# Travis Sweeter Commercial Office Cleaning
+# St. Cloud Commercial Office Cleaning
 
 Owner-operated recurring commercial office cleaning for smaller professional offices in the greater St. Cloud, Minnesota area.
 
@@ -13,3 +13,6 @@ Owner-operated recurring commercial office cleaning for smaller professional off
 **Phone:** 615-457-8175
 
 This repository hosts the production landing page used by the business-card QR campaign.
+
+
+**Public brand:** St. Cloud Commercial Office Cleaning. Owner-operated by Travis Sweeter. The existing GitHub Pages repository path is intentionally retained to preserve printed QR destinations, links and Google indexing.
